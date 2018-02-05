@@ -21,6 +21,24 @@
 
 USER_CODE_VERSION(MAJOR_VERSION,MINOR_VERSION)
 
+typedef struct {
+	PMDuint32 mode[4];
+	PMDint32 current[4];
+	PMDint32 velocity[4];
+	PMDint32 position[4];
+	PMDuint32 temperature[4];
+	PMDuint32 analog[4];
+	PMDuint32 fault[4];
+} DVRKMessageToPC;
+
+typedef struct {
+	PMDuint32 command;
+	PMDint32 command_payload[4];
+	PMDuint32 mode[4];
+	PMDint32 motor_command[4];
+} DVRKMessageFromPC;
+
+
 USER_CODE_TASK(GenericUserPacket)
 {
 	PMDDeviceHandle *phDevice = NULL;
@@ -28,8 +46,7 @@ USER_CODE_TASK(GenericUserPacket)
 	PMDAxisHandle hAxis[4];
 	PMDPeriphHandle hPeriph;
 	PMDuint32 vmajor, vminor; 
-	PMDuint8 data[BUFSIZE]; 	  
-	PMDuint32 bytesReceived,i;
+	PMDuint32 bytesReceived;
 	PMDresult result;
 	
 	PMDprintf("\n\n*** Begin GenericUserPacket.c ***\n");
@@ -43,73 +60,71 @@ USER_CODE_TASK(GenericUserPacket)
 	PMD_ABORTONERROR(PMDPeriphOpenPIO(&hPeriphIO, phDevice, 0, 0, PMDDataSize_16Bit));
 	PMDPeriphOpenTCP(&hPeriph, NULL, PMD_IP4_ADDR(0, 0, 0, 0), 18021, 0);
 
-	memset(data, 0, BUFSIZE);
-/*
-
-	// TODO: select the desired interface 
-	PMDprintf("Attempting to open the communications port\n");
-
-	// TODO: select the interface to receive user packets
-//	PMD_ABORTONERROR(PMDPeriphOpenCME( &hPeriph, NULL)) // select this one to receive user packets via the PMD Resource Protocol
-	PMD_ABORTONERROR(PMDPeriphOpenTCP( &hPeriph, NULL, PMD_IP4_ADDR(0,0,0,0), 18021, 0 )) // listen for a TCP connection on port 18021
-//	PMD_ABORTONERROR(PMDPeriphOpenCAN( &hPeriph, NULL, 0x601, 0x581, 0 )) 
-//	PMD_ABORTONERROR(PMDPeriphOpenCOM( &hPeriph, NULL, PMDSerialPort1, PMDSerialBaud57600, PMDSerialParityNone, PMDSerialStopBits1 ))
-
-	memset(data, 0, BUFSIZE); 
-
+	DVRKMessageToPC to_pc = { 0 };
+	DVRKMessageFromPC from_pc = { 0 };
+	PMDuint16 adc_reading[8] = { 0 };
 	
-	PMD_RESULT(PMDPeriphReceive(&hPeriph, &data, &bytesReceived, 10, 10))
-
-	if (result == PMD_ERR_OK) 
-	{
-		PMDprintf("New data received, number of bytes=%d\n", bytesReceived);
-		for(i=0; i<bytesReceived; i++)
-		{
-			PMDprintf("Data=%x\n", data[i]);
-		}
-		PMDprintf("Sending the received data\n");
-		PMD_RESULT(PMDPeriphSend(&hPeriph, &data, bytesReceived, 10))
-	}
-
-	PMDprintf("Done\n");
-	
-	*/
-
 	while (1) {
 
-		PMDresult result = PMDPeriphReceive(&hPeriph, &data, &bytesReceived, 10, 0);
+		PMDPeriphRead(&hPeriphIO, &adc_reading, PMDMachineIO_AICh1, 16);
+		to_pc.analog[0] = adc_reading[7];
+		to_pc.analog[1] = adc_reading[1];
+		to_pc.analog[2] = adc_reading[6];
+		to_pc.analog[3] = adc_reading[3];
+		
+		for (int axis = 0; axis < 4; axis++) {
+			PMDuint16 mode;
+			PMDGetOperatingMode(&hAxis[axis], &mode);
+			to_pc.mode[axis] = mode;
 
-			if (result == PMD_ERR_NotConnected) {
-				PMDPeriphClose(&hPeriph);
-				PMDPeriphOpenTCP(&hPeriph, NULL, PMD_IP4_ADDR(0, 0, 0, 0), 18021, 0);
-			}
+			PMDGetCurrentLoopValue(&hAxis[axis], 0x00, 0x01, &to_pc.current[axis]);
 
-			if (result == PMD_ERR_OK)
-			{
-				PMDprintf("New data received, number of bytes=%d\n", bytesReceived);
-				for (i = 0; i<bytesReceived; i++)
-				{
-					PMDprintf("Data=%x\n", data[i]);
+			PMDGetActualVelocity(&hAxis[axis], &to_pc.velocity[axis]);
+
+			PMDGetActualPosition(&hAxis[axis], &to_pc.position[axis]);
+
+			PMDuint16 temperature;
+			PMDGetTemperature(&hAxis[axis], &temperature);
+			to_pc.temperature[axis] = temperature;
+
+			PMDuint16 fault;
+			PMDGetDriveFaultStatus(&hAxis[axis], &fault);
+			to_pc.fault[axis] = fault;
+		}
+
+		PMDresult send_result = PMDPeriphSend(&hPeriph, &to_pc, sizeof(to_pc), 1);
+		if (send_result == PMD_ERR_NotConnected) {
+			for (int axis = 0; axis < 4; axis++) {
+				// disable motor power when connection lost.
+				PMDSetOperatingMode(&hAxis[axis], 0x01);
+				PMDUpdate(&hAxis[axis]);
+			}	
+			PMDPeriphClose(&hPeriph);
+			PMDPeriphOpenTCP(&hPeriph, NULL, PMD_IP4_ADDR(0, 0, 0, 0), 18021, 0);
+		}
+
+
+		PMDresult receive_result = PMDPeriphReceive(&hPeriph, &from_pc, &bytesReceived, sizeof(from_pc), 0);
+
+		if (receive_result == PMD_ERR_NotConnected) {
+			PMDPeriphClose(&hPeriph);
+			PMDPeriphOpenTCP(&hPeriph, NULL, PMD_IP4_ADDR(0, 0, 0, 0), 18021, 0);
+		}
+
+		if (receive_result == PMD_ERR_OK)
+		{
+			for (int axis = 0; axis < 4; axis++) {
+				PMDuint16 mode = (PMDuint16)from_pc.mode[axis];
+				if (mode < 0x07) {
+					PMDSetOperatingMode(&hAxis[axis], mode);
+					PMDSetMotorCommand(&hAxis[axis], (PMDint16)from_pc.motor_command[axis]);
 				}
-				PMDprintf("Sending the received data\n");
-				PMDint32 number[2] = { 12345678, 87654321 };
-				PMD_RESULT(PMDPeriphSend(&hPeriph, (void*)number , 8, 1))
+				else {
+					//set the velocity/position profile
+				}
+				PMDUpdate(&hAxis[axis]);
 			}
-
-		PMDprintf("Done\n");
-
-		PMDSetOperatingMode(&hAxis[0], 0x07);
-		PMDSetMotorCommand(&hAxis[0], -10);
-		PMDUpdate(&hAxis[0]);
-
-		PMDSetOperatingMode(&hAxis[1], 0x07);
-		PMDSetMotorCommand(&hAxis[1], 10);
-		PMDUpdate(&hAxis[1]);
-
+		}
 	}
-	PMDPeriphClose(&hPeriph);
-
-
-	PMDTaskAbort(0);
 }
 
