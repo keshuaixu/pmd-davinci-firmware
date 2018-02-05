@@ -1,0 +1,7 @@
+<Workspace name="PMD examples">
+<Project path=".\Hello\Hello.pnproj"></Project>
+<Project path=".\IONCME\IONCME.pnproj"></Project>
+<Project path=".\ProdigyCME\ProdigyCME.pnproj"></Project>
+<Project path=".\MachineController\MachineController.pnproj"></Project>
+<Project path=".\GenericUserPacket\GenericUserPacket.pnproj"></Project>
+</Workspace>
