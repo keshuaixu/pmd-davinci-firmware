@@ -73,7 +73,7 @@ USER_CODE_TASK(GenericUserPacket)
 	while (1) {
 		
 
-		PMDPeriphRead(&hPeriphIO, &adc_reading, PMDMachineIO_AICh1, 8);
+		PMD_RESULT(PMDPeriphRead(&hPeriphIO, &adc_reading, PMDMachineIO_AICh1, 8))
 		to_pc.analog[0] = adc_reading[7];
 		to_pc.analog[1] = adc_reading[1];
 		to_pc.analog[2] = adc_reading[6];
@@ -81,21 +81,21 @@ USER_CODE_TASK(GenericUserPacket)
 		
 		for (int axis = 0; axis < 4; axis++) {
 			PMDuint16 mode;
-			PMDGetOperatingMode(&hAxis[axis], &mode);
+			PMD_RESULT(PMDGetOperatingMode(&hAxis[axis], &mode))
 			to_pc.mode[axis] = mode;
 
-			PMDGetCurrentLoopValue(&hAxis[axis], 0x00, 0x01, &to_pc.current[axis]);
+			PMD_RESULT(PMDGetCurrentLoopValue(&hAxis[axis], 0x00, 0x01, &to_pc.current[axis]))
 
-			PMDGetActualVelocity(&hAxis[axis], &to_pc.velocity[axis]);
+			PMD_RESULT(PMDGetActualVelocity(&hAxis[axis], &to_pc.velocity[axis]))
 
-			PMDGetActualPosition(&hAxis[axis], &to_pc.position[axis]);
+			PMD_RESULT(PMDGetActualPosition(&hAxis[axis], &to_pc.position[axis]))
 
 			PMDuint16 temperature;
-			PMDGetTemperature(&hAxis[axis], &temperature);
+			PMD_RESULT(PMDGetTemperature(&hAxis[axis], &temperature))
 			to_pc.temperature[axis] = temperature;
 
 			PMDuint16 fault;
-			PMDGetDriveFaultStatus(&hAxis[axis], &fault);
+			PMD_RESULT(PMDGetDriveFaultStatus(&hAxis[axis], &fault))
 			to_pc.fault[axis] = fault;
 		}
 		
@@ -124,17 +124,16 @@ USER_CODE_TASK(GenericUserPacket)
 
 		if (receive_result == PMD_ERR_OK)
 		{	
-			PMDprintf("got message!%d\n", bytesReceived);
 			for (int axis = 0; axis < 4; axis++) {
 				PMDuint16 mode = (PMDuint16)from_pc.mode[axis];
 				if (mode <= 0x07) {
-					PMDSetOperatingMode(&hAxis[axis], mode);
-					PMDSetMotorCommand(&hAxis[axis], (PMDint16)from_pc.motor_command[axis]);
+					PMD_RESULT(PMDSetOperatingMode(&hAxis[axis], mode))
+					PMD_RESULT(PMDSetMotorCommand(&hAxis[axis], (PMDint16)from_pc.motor_command[axis]))
 				}
 				else {
 					//set the velocity/position profile
 				}
-				PMDUpdate(&hAxis[axis]);
+				PMD_RESULT(PMDUpdate(&hAxis[axis]))
 			}
 		}
 
