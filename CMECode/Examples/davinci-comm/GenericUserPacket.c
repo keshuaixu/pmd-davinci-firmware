@@ -67,7 +67,7 @@ USER_CODE_TASK(GenericUserPacket)
 	
 	PMDuint32 ip_addr = 0;
 	PMDPeriphOpenUDP(&hPeriph, NULL, PMD_IP4_ADDR(192, 168, 1, 255), 18021);
-	PMDPeriphOpenUDP(&hPeriph_rx, NULL, PMD_IP4_ADDR(0, 0, 0, 0), 18021);
+	PMDPeriphOpenUDP(&hPeriph_rx, NULL, PMD_IP4_ADDR(0, 0, 0, 0), 18022);
 
 
 	while (1) {
@@ -124,6 +124,7 @@ USER_CODE_TASK(GenericUserPacket)
 
 		if (receive_result == PMD_ERR_OK)
 		{	
+			PMDprintf("received %d\n", bytesReceived);
 			for (int axis = 0; axis < 4; axis++) {
 				PMDuint16 mode = (PMDuint16)from_pc.mode[axis];
 				if (mode <= 0x07) {
