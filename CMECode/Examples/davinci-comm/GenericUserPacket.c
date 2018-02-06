@@ -45,6 +45,7 @@ USER_CODE_TASK(GenericUserPacket)
 	PMDPeriphHandle hPeriphIO;
 	PMDAxisHandle hAxis[4];
 	PMDPeriphHandle hPeriph;
+	PMDPeriphHandle hPeriph_rx;
 	PMDuint32 vmajor, vminor; 
 	PMDuint32 bytesReceived;
 	PMDresult result;
@@ -58,15 +59,21 @@ USER_CODE_TASK(GenericUserPacket)
 	PMD_ABORTONERROR(PMDAxisOpen(&hAxis[2], phDevice, PMDAxis3));
 	PMD_ABORTONERROR(PMDAxisOpen(&hAxis[3], phDevice, PMDAxis4));
 	PMD_ABORTONERROR(PMDPeriphOpenPIO(&hPeriphIO, phDevice, 0, 0, PMDDataSize_16Bit));
-	PMDPeriphOpenTCP(&hPeriph, NULL, PMD_IP4_ADDR(0, 0, 0, 0), 18021, 0);
+	//PMDPeriphOpenTCP(&hPeriph, NULL, PMD_IP4_ADDR(0, 0, 0, 0), 18021, 0);
 
 	DVRKMessageToPC to_pc = { 0 };
 	DVRKMessageFromPC from_pc = { 0 };
 	PMDuint16 adc_reading[8] = { 0 };
 	
-	while (1) {
+	PMDuint32 ip_addr = 0;
+	PMDPeriphOpenUDP(&hPeriph, NULL, PMD_IP4_ADDR(192, 168, 1, 255), 18021);
+	PMDPeriphOpenUDP(&hPeriph_rx, NULL, PMD_IP4_ADDR(0, 0, 0, 0), 18021);
 
-		PMDPeriphRead(&hPeriphIO, &adc_reading, PMDMachineIO_AICh1, 16);
+
+	while (1) {
+		
+
+		PMDPeriphRead(&hPeriphIO, &adc_reading, PMDMachineIO_AICh1, 8);
 		to_pc.analog[0] = adc_reading[7];
 		to_pc.analog[1] = adc_reading[1];
 		to_pc.analog[2] = adc_reading[6];
@@ -91,8 +98,9 @@ USER_CODE_TASK(GenericUserPacket)
 			PMDGetDriveFaultStatus(&hAxis[axis], &fault);
 			to_pc.fault[axis] = fault;
 		}
-
-		PMDresult send_result = PMDPeriphSend(&hPeriph, &to_pc, sizeof(to_pc), 1);
+		
+		PMDresult send_result = PMDPeriphSend(&hPeriph, &to_pc, sizeof(to_pc), 0);
+		/*
 		if (send_result == PMD_ERR_NotConnected) {
 			for (int axis = 0; axis < 4; axis++) {
 				// disable motor power when connection lost.
@@ -102,20 +110,24 @@ USER_CODE_TASK(GenericUserPacket)
 			PMDPeriphClose(&hPeriph);
 			PMDPeriphOpenTCP(&hPeriph, NULL, PMD_IP4_ADDR(0, 0, 0, 0), 18021, 0);
 		}
+		*/
 
-
-		PMDresult receive_result = PMDPeriphReceive(&hPeriph, &from_pc, &bytesReceived, sizeof(from_pc), 0);
+		
+		PMDresult receive_result = PMDPeriphReceive(&hPeriph_rx, &from_pc, &bytesReceived, sizeof(from_pc), 0);
+		/*
 
 		if (receive_result == PMD_ERR_NotConnected) {
 			PMDPeriphClose(&hPeriph);
 			PMDPeriphOpenTCP(&hPeriph, NULL, PMD_IP4_ADDR(0, 0, 0, 0), 18021, 0);
 		}
+		*/
 
 		if (receive_result == PMD_ERR_OK)
-		{
+		{	
+			PMDprintf("got message!%d\n", bytesReceived);
 			for (int axis = 0; axis < 4; axis++) {
 				PMDuint16 mode = (PMDuint16)from_pc.mode[axis];
-				if (mode < 0x07) {
+				if (mode <= 0x07) {
 					PMDSetOperatingMode(&hAxis[axis], mode);
 					PMDSetMotorCommand(&hAxis[axis], (PMDint16)from_pc.motor_command[axis]);
 				}
@@ -125,6 +137,7 @@ USER_CODE_TASK(GenericUserPacket)
 				PMDUpdate(&hAxis[axis]);
 			}
 		}
+
 	}
 }
 
