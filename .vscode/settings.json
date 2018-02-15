@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "pmdperiph.h": "c",
+        "pmdsys.h": "c"
+    }
+}

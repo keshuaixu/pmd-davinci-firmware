@@ -38,6 +38,10 @@ typedef struct {
 	PMDint32 motor_command[4];
 } DVRKMessageFromPC;
 
+const PMDuint32 COMMAND_SET_ENCODER = 0x01;
+const PMDuint32 COMMAND_RESET_ERROR = 0x02;
+
+
 
 USER_CODE_TASK(GenericUserPacket)
 {
@@ -66,8 +70,13 @@ USER_CODE_TASK(GenericUserPacket)
 	PMDuint16 adc_reading[8] = { 0 };
 	
 	PMDuint32 ip_addr = 0;
+	PMDPeriphOpenUDP(&hPeriph_rx, NULL, PMD_IP4_ADDR(0, 0, 0, 0), 18022);	
 	PMDPeriphOpenUDP(&hPeriph, NULL, PMD_IP4_ADDR(192, 168, 1, 255), 18021);
-	PMDPeriphOpenUDP(&hPeriph_rx, NULL, PMD_IP4_ADDR(0, 0, 0, 0), 18022);
+
+	for (int axis = 0; axis < 4; axis++) {
+		PMDSetEventAction(&hAxis[axis], 4,0);
+	}
+
 
 
 	while (1) {
@@ -100,32 +109,21 @@ USER_CODE_TASK(GenericUserPacket)
 		}
 		
 		PMDresult send_result = PMDPeriphSend(&hPeriph, &to_pc, sizeof(to_pc), 0);
-		/*
-		if (send_result == PMD_ERR_NotConnected) {
-			for (int axis = 0; axis < 4; axis++) {
-				// disable motor power when connection lost.
-				PMDSetOperatingMode(&hAxis[axis], 0x01);
-				PMDUpdate(&hAxis[axis]);
-			}	
-			PMDPeriphClose(&hPeriph);
-			PMDPeriphOpenTCP(&hPeriph, NULL, PMD_IP4_ADDR(0, 0, 0, 0), 18021, 0);
-		}
-		*/
-
 		
 		PMDresult receive_result = PMDPeriphReceive(&hPeriph_rx, &from_pc, &bytesReceived, sizeof(from_pc), 0);
-		/*
-
-		if (receive_result == PMD_ERR_NotConnected) {
-			PMDPeriphClose(&hPeriph);
-			PMDPeriphOpenTCP(&hPeriph, NULL, PMD_IP4_ADDR(0, 0, 0, 0), 18021, 0);
-		}
-		*/
 
 		if (receive_result == PMD_ERR_OK)
 		{	
-			PMDprintf("received %d\n", bytesReceived);
+			// PMDprintf("received %d\n", bytesReceived);
+
+
 			for (int axis = 0; axis < 4; axis++) {
+				if (from_pc.command == COMMAND_SET_ENCODER) {
+					PMD_RESULT(PMDSetActualPosition(&hAxis[axis], from_pc.command_payload[axis]))
+				}	
+
+				// PMD_RESULT(PMDRestoreOperatingMode(&hAxis[axis]))			
+
 				PMDuint16 mode = (PMDuint16)from_pc.mode[axis];
 				if (mode <= 0x07) {
 					PMD_RESULT(PMDSetOperatingMode(&hAxis[axis], mode))
@@ -136,7 +134,14 @@ USER_CODE_TASK(GenericUserPacket)
 				}
 				PMD_RESULT(PMDUpdate(&hAxis[axis]))
 			}
+		} else if (receive_result == PMD_ERR_Timeout) {
+			// normal condition. pass
+		} else if (receive_result == PMD_ERR_NotConnected) {
+			// PMDPeriphOpenUDP(&hPeriph_rx, NULL, PMD_IP4_ADDR(0, 0, 0, 0), 18022);
+		} else {
+			PMDprintf("unhandled result %04x\n", receive_result);
 		}
+		
 
 	}
 }
